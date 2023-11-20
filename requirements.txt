@@ -1,0 +1,9 @@
+coverage==5.5
+deprecation==2.1.0
+filetype==1.2.0
+mutagen==1.47.0
+packaging==23.2
+Pillow==10.1.0
+pydub==0.25.1
+tk==0.1.0
+toml==0.10.2

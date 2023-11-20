@@ -4,12 +4,14 @@ from tkinter import ttk
 from tkinter import filedialog
 from mutagen.mp3 import MP3
 from mutagen.easyid3 import EasyID3
+from mutagen import File
 from pathlib import Path
 from pydub import AudioSegment
 from pydub.playback import play
 from subprocess import check_output
 from subprocess import CalledProcessError
 from shutil import copy2
+from PIL import Image, ImageTk
 import multiprocessing
 import time
 import os
@@ -19,12 +21,12 @@ import signal
 
 # Global vars
 playing = False
-paused = False
 
 
 # Create a queue
 mq = multiprocessing.Queue()
 proc = None
+after_id = None
 
 
 # Create root window
@@ -51,6 +53,18 @@ def add():
     else:
         pass
     return
+
+
+def album_art():
+    file = musicFiles.get("active")
+    filepath = Path(str(Path.cwd()) + f"/music/{file}")
+    artpath = "images/image.png"
+    musicfile = File(filepath)
+    artwork = musicfile.tags["APIC:"].data
+    with open(artpath, "wb") as img:
+        img.write(artwork)
+    albumart = Path(str(Path.cwd()) + f"/{artpath}")
+    return albumart
 
 
 def back(event):
@@ -111,15 +125,16 @@ def forward():
 
 def play_callback(songname):
     # Create new thread for playing music
-    global mq
-    global proc
+    global artwork, proc
     try:
-        stop_music()
+        progress()
     except CalledProcessError:
         pass
     except AttributeError:
         pass
     finally:
+        artwork = ImageTk.PhotoImage(Image.open(album_art()).resize((320,320)))
+        albumart.config(image=artwork)
         proc = multiprocessing.Process(target=play_music, args=(songname,))
         proc.start()
     return
@@ -129,11 +144,15 @@ def play_music(songname):
     global mq
     song = AudioSegment.from_mp3("music/" + songname)
     mq.put(play(song))
+    mq.put(progress())
     return
 
 
 def stop_music():
-    global proc
+    global proc, after_id
+    if after_id:
+        progbar.stop()
+        root.after_cancel(after_id)
     proc.terminate()
     proc.join()
     childProc = check_output(["pidof", "ffplay"])
@@ -157,6 +176,16 @@ def replay():
     return
 
 
+def progress():
+    global after_id
+    audio = AudioSegment.from_file("music/" + musicFiles.get("active"))
+    songlength = int(len(audio) / 1000)
+    if progbar["value"] != 100:
+        progbar.step((1/songlength) * 100)
+    after_id = root.after(5, progress)
+    return
+
+
 # Styles
 style = ttk.Style()
 style.configure("M.TButton", font="bold")
@@ -168,17 +197,23 @@ stopimg = PhotoImage(file="images/stop.png")
 backimg = PhotoImage(file="images/back.png")
 nextimg = PhotoImage(file="images/next.png")
 addimg = PhotoImage(file="images/add.png")
-sm_playimg = playimg.subsample(7, 7)
-sm_stopimg = stopimg.subsample(7, 7)
-sm_backimg = backimg.subsample(7, 7)
-sm_nextimg = nextimg.subsample(7, 7)
-sm_addimg = addimg.subsample(25, 25)
+sm_playimg = playimg.subsample(20, 20)
+sm_stopimg = stopimg.subsample(20, 20)
+sm_backimg = backimg.subsample(20, 20)
+sm_nextimg = nextimg.subsample(20, 20)
+sm_addimg = addimg.subsample(20, 20)
 
 
 # Album picture
-image = PhotoImage(file="images/empty_album.png")
-img = ttk.Label(root, image=image)
-img.grid(column=1, row=1, rowspan=6, padx=5, pady=5, sticky="N")
+artwork = None
+emptyalb = ImageTk.PhotoImage(Image.open("images/disc.png").resize((320,320)))
+albumart = ttk.Label(root, image=emptyalb)
+albumart.grid(column=1, row=1, rowspan=6, padx=5, pady=5, sticky="N")
+
+
+# Progress Bar
+progbar = ttk.Progressbar(root, orient="horizontal", mode="determinate", length=320)
+progbar.grid(column=1, row=7, padx=5)
 
 
 # Music Library
@@ -196,7 +231,7 @@ musicFiles.bind("<<ListboxSelect>>", fetch_music_title)
 
 # Music controls
 controlFrame = Frame(root, height=100)
-controlFrame.grid(column=1, row=7)
+controlFrame.grid(column=1, row=8, pady=5)
 backButton = ttk.Button(controlFrame, text="Previous",
                         image=sm_backimg)
 backButton.grid(column=0, row=0, padx=5)
